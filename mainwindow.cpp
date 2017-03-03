@@ -35,19 +35,26 @@ MainWindow::~MainWindow()
 void MainWindow::moniter_time_loop()
 {
     QSqlQuery query1(my_db);
+    query1.exec("SELECT COUNT(*) as row_count FROM OI_system_probe_moniter");
+    int rowcount =0;
+    if(query1.next()){
+        rowcount = query1.value("row_count").toInt();
+    }
+
     query1.exec("select * from OI_system_probe_moniter");
     QString append_txt;
     int i =0;
+
     while(query1.next()){
-            if(i==0){
-                append_txt = append_txt.append(QString(" EQUIPMENT_ID = '%1' ").arg(query1.value("machine_code").toString()));
+            if(i==rowcount-1){
+                append_txt = append_txt.append(QString("'%1'").arg(query1.value("machine_code").toString()));
             }else {
-                append_txt = append_txt.append(QString(" OR EQUIPMENT_ID = '%1' ").arg(query1.value("machine_code").toString()));
+                append_txt = append_txt.append(QString("'%1',").arg(query1.value("machine_code").toString()));
             }
             i++;
     }
     QSqlQuery query2(ms_mes_db);
-    query2.exec(QString("select EQUIPMENT_ID,EQUIPMENT_NAME,LAST_EVENT_ID from NM_EQUIPMENT where DELETE_FLAG = 'N' AND (%1)").arg(append_txt));
+    query2.exec(QString("select EQUIPMENT_ID,EQUIPMENT_NAME,LAST_EVENT_ID from NM_EQUIPMENT (NOLOCK) where EQUIPMENT_ID IN(%1) AND DELETE_FLAG = 'N'").arg(append_txt));
     while(query2.next()){
 
             query1.exec(QString("select * from OI_system_probe_moniter where machine_code = '%1' ").arg(query2.value("EQUIPMENT_ID").toString()));
@@ -110,6 +117,26 @@ void MainWindow::moniter_time_loop()
 
                             }
                         }else {
+                            query_txt = QString("select * from OI_system_time where run_time is NULL "
+                                                "AND machine_code = '%1' "
+                                                "AND machine_name = '%2' order by stop_time desc LIMIT 1").arg(query1.value("machine_code").toString())
+                                                                                                          .arg(query1.value("machine_name").toString());
+                            query.exec(query_txt);
+                            if(query.next()){
+                                QDateTime stop_time = query.value("stop_time").toDateTime();
+                                qint64 secs = stop_time.secsTo(current_datetime);
+                                QString time_str = from_sec_to_timestr(secs);
+                                query_txt = QString("Update `OI_system_time` SET "
+                                                    "run_time = '%1',run_name='%2',stop_time_calc='%3' "
+                                                    "Where stop_time = '%5' AND machine_code ='%6'")
+                                                    .arg(currenttime_str).arg("auto").arg(time_str)
+                                                    .arg(query.value("stop_time").toDateTime().toString("yyyy-MM-dd hh:mm:ss"))
+                                                    .arg(query.value("machine_code").toString());
+                                query.exec(query_txt);
+                            }else {
+
+                            }
+
                             query_txt = QString("select * from OI_system_time where run_time is NULL "
                                                 "AND machine_code = '%1' "
                                                 "AND machine_name = '%2' order by run_time desc LIMIT 1")
